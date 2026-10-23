@@ -8,6 +8,9 @@
   "orientation": "portrait",
   "background_color": "#0e1013",
   "theme_color": "#0e1013",
+  "shortcuts": [
+    { "name": "Take progress photo", "short_name": "Take photo", "url": "./?capture=1" }
+  ],
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },

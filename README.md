@@ -16,7 +16,20 @@ A small installable web app for taking before/after gym photos and comparing the
   - **Save comparison image**: exports one labelled side-by-side JPG (uses the share sheet on phones)
 - **Gallery** of every photo, with set-as-before/after and delete
 - **Backup & restore**: one `.zip` with every photo plus dates, weights and notes. You can save it to Files, iCloud Drive or Google Drive and restore it on any phone. A dot on **Backup** reminds you when you have new photos that aren't backed up.
-- lb/kg toggle, works offline once loaded
+- **Daily reminder**: pick a time in Settings and add a repeating daily calendar event with an alert, linking back to the app (see below)
+- **Streak**: the home screen shows how many days in a row you've logged a photo, and a banner appears if today's photo isn't taken yet
+- **Photo guidance**: a quick tap-through checklist before the camera opens (with "Don't show again today"), plus a "How to take good progress photos" page in Settings explaining why each tip matters
+- lb/kg setting, works offline once loaded
+
+## Daily reminders
+
+A web app with no server can't send push notifications, so the reminder lives in your phone's calendar instead:
+
+1. Open **Settings** (the sliders icon at the top right) and set **Remind me at**.
+2. Tap **Add to Calendar**. On iPhone, tap **Allow**, then **Add All**. If nothing opens, tap **Share…** and send the file to yourself in Mail or Messages, then tap the attachment.
+3. You get a daily alert at that time. The event's link opens the app straight to the camera.
+
+To change the time, add it again and delete the old event in Calendar. On iPhone, calendar links open in Safari, which keeps separate storage from the home-screen app, so open the app from its icon to take the photo.
 
 ## Install it on your phone
 
@@ -63,8 +76,10 @@ The backup is a normal zip: a `photos/` folder of JPGs and a `backup.json` holdi
 | --- | --- |
 | `index.html` | App shell and tab bar |
 | `styles.css` | All styling |
-| `js/app.js` | Views (compare, capture, gallery), camera, and export |
+| `js/app.js` | Views (compare, capture, gallery, settings, tips), camera, and export |
 | `js/db.js` | IndexedDB wrapper |
 | `js/zip.js` | Zip writer and reader for backups |
+| `js/reminders.js` | Streak calculation and the daily reminder `.ics` |
+| `js/guide.js` | Photo tips used by the checklist and tips page |
 | `sw.js` | Offline cache for the app shell |
 | `manifest.webmanifest`, `icons/` | Home-screen install metadata |

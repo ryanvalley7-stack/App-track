@@ -1,5 +1,7 @@
 import * as db from './db.js';
 import { createZip, readZip } from './zip.js';
+import { dayKey, streaks, buildIcs } from './reminders.js';
+import { TIPS } from './guide.js';
 
 const POSES = [
   { id: 'front', label: 'Front' },
@@ -19,7 +21,12 @@ const state = {
   compare: { beforeId: null, afterId: null, mode: 'side', split: 50 },
   unit: readPref('unit', 'lb'),
   lastBackup: Number(readPref('lastBackup', 0)),
+  reminderTime: readPref('reminderTime', '07:00'),
+  backStack: [],       // views to return to from settings/tips
 };
+
+// Pre-camera checklist: shown once per app open unless skipped for today or turned off.
+const guide = { seen: false, checked: new Set() };
 
 const camera = { stream: null, facing: 'user', timer: 0, grid: true, ghost: 0.35, busy: false };
 const urls = new Map(); // photo id -> { full, thumb } object URLs
@@ -170,9 +177,12 @@ async function deletePhoto(id) {
 
 // ---------- navigation ----------
 
-function go(name) {
+function go(name, { isBack = false } = {}) {
   if (state.view === 'capture' && name !== 'capture') stopCamera();
+  if (name !== 'settings' && name !== 'tips') state.backStack = [];
+  else if (!isBack && state.view !== name) state.backStack.push(state.view);
   state.view = name;
+  window.scrollTo(0, 0);
   document.querySelectorAll('.tabbar .tab').forEach((t) => t.classList.toggle('active', t.dataset.view === name));
   render();
 }
@@ -182,7 +192,32 @@ function render() {
   $('#backupBtn .dot').hidden = !needsBackup();
   if (state.view === 'compare') renderCompare();
   else if (state.view === 'capture') renderCapture();
+  else if (state.view === 'settings') renderSettings();
+  else if (state.view === 'tips') renderTips();
   else renderGallery();
+}
+
+// ---------- streak & today banner ----------
+
+function homeHeader() {
+  if (!state.photos.length) return '';
+  const { current, best, doneToday } = streaks(state.photos);
+  const showBanner = !doneToday && readPref('bannerDismissed', '') !== dayKey(Date.now());
+  return `
+    <div class="streak ${doneToday ? 'done' : ''}">
+      <span class="flame" aria-hidden="true">${current ? '🔥' : '💤'}</span>
+      <div class="streak-text">
+        <strong>${current ? `${current}-day streak` : 'No streak yet'}</strong>
+        <span>${doneToday ? 'Today’s photo is done ✓' : current ? 'Take today’s photo to keep it going' : 'Take a photo today to start one'}${best > current ? ` · Best ${best}` : ''}</span>
+      </div>
+    </div>
+    ${showBanner ? `
+    <div class="today-banner" role="status">
+      <div><strong>No photo yet today</strong>
+        <span>${current ? `Don’t lose your ${current}-day streak.` : 'A quick photo keeps your progress on track.'}</span></div>
+      <button class="btn primary sm" data-go="capture">Take photo</button>
+      <button class="icon-btn sm" data-banner-dismiss aria-label="Dismiss for today">✕</button>
+    </div>` : ''}`;
 }
 
 // ---------- compare ----------
@@ -205,7 +240,7 @@ function renderCompare() {
   const c = state.compare;
 
   if (list.length === 0) {
-    view.innerHTML = `${poseChips(state.pose)}
+    view.innerHTML = `${homeHeader()}${poseChips(state.pose)}
       <div class="empty">
         <div class="empty-art"><div></div><div></div></div>
         <h2>No ${poseLabel(state.pose).toLowerCase()} photos yet</h2>
@@ -224,7 +259,7 @@ function renderCompare() {
   const delta = wb != null && wa != null ? Math.round((wa - wb) * 10) / 10 : null;
   const single = list.length === 1;
 
-  view.innerHTML = `${poseChips(state.pose)}
+  view.innerHTML = `${homeHeader()}${poseChips(state.pose)}
     <div class="pickers">
       <label class="picker before"><span>Before</span>
         <select data-pick="beforeId">${list.map((p) => option(p, before.id)).join('')}</select></label>
@@ -328,7 +363,28 @@ function ghostPhoto() {
   return list[list.length - 1];
 }
 
+function shouldShowGuide() {
+  return !guide.seen && readPref('guideEnabled', '1') === '1' && readPref('guideSkip', '') !== dayKey(Date.now());
+}
+
+function renderGuide() {
+  const done = guide.checked.size;
+  view.innerHTML = `
+    <div class="guide">
+      <h2>Before you shoot</h2>
+      <p class="muted">Tap each one as you set up. Keeping these the same every time matters more than anything else.</p>
+      <ul class="checklist">${TIPS.map((t) => `
+        <li><button class="check-item ${guide.checked.has(t.id) ? 'done' : ''}" data-check="${t.id}" aria-pressed="${guide.checked.has(t.id)}">
+          <span class="box" aria-hidden="true"></span><span>${t.check}</span></button></li>`).join('')}
+      </ul>
+      <label class="toggle-row"><input type="checkbox" data-guide-skip> Don’t show again today</label>
+      <button class="btn primary wide" data-guide-continue>${done === TIPS.length ? 'All set, open camera' : `Open camera <span class="progress">${done}/${TIPS.length}</span>`}</button>
+      <button class="link-btn" data-go="tips">Why these matter</button>
+    </div>`;
+}
+
 function renderCapture() {
+  if (shouldShowGuide()) return renderGuide();
   const ghost = ghostPhoto();
   view.innerHTML = `${poseChips(state.pose)}
     <div class="cam-frame ${camera.grid ? 'show-grid' : ''}">
@@ -704,6 +760,94 @@ async function handleRestore(file) {
   }
 }
 
+// ---------- settings ----------
+
+function icsFile() {
+  const url = new URL('./?capture=1', location.href).href;
+  return new File([buildIcs({ time: state.reminderTime, url })], 'progress-photo-reminder.ics', { type: 'text/calendar' });
+}
+
+function fmtTime(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function reminderStatus() {
+  const saved = readPref('reminderSaved', '');
+  if (!saved) return 'Not added to your calendar yet.';
+  if (saved !== state.reminderTime) return `Your calendar has the ${fmtTime(saved)} reminder. Add it again to switch to ${fmtTime(state.reminderTime)}, then delete the old event.`;
+  return `Added for ${fmtTime(saved)} every day.`;
+}
+
+function pageHead(title) {
+  return `<div class="page-head"><button class="icon-btn" data-back aria-label="Back">‹</button><h2>${title}</h2></div>`;
+}
+
+function renderSettings() {
+  const canShare = navigator.canShare?.({ files: [icsFile()] });
+  view.innerHTML = `${pageHead('Settings')}
+    <section class="card">
+      <h3>Daily photo reminder</h3>
+      <p class="muted">The app can’t send notifications on its own, so the reminder goes in your phone’s calendar as a daily event with an alert. Tapping it links back here.</p>
+      <label class="field-inline">Remind me at <input type="time" value="${state.reminderTime}" data-reminder-time></label>
+      <div class="row-actions tight">
+        <button class="btn primary" data-ics-add>Add to Calendar</button>
+        ${canShare ? '<button class="btn ghost-btn" data-ics-share>Share…</button>' : ''}
+      </div>
+      <p class="muted small" data-reminder-status>${reminderStatus()}</p>
+      <details class="help">
+        <summary>Using an iPhone?</summary>
+        <p>Tap <strong>Add to Calendar</strong>, then <strong>Allow</strong> if asked, then <strong>Add All</strong>. If nothing opens, tap <strong>Share…</strong> and send the file to yourself in Mail or Messages, then tap the attachment. Links in calendar events open in Safari, so when the alert goes off, open Gym Progress from your home screen icon, where your photos are stored.</p>
+      </details>
+    </section>
+
+    <section class="card">
+      <h3>Photo guidance</h3>
+      <button class="row-link" data-go="tips"><span>How to take good progress photos</span><span aria-hidden="true">›</span></button>
+      <label class="toggle-row"><span>Show checklist before the camera</span>
+        <input type="checkbox" data-guide-enabled ${readPref('guideEnabled', '1') === '1' ? 'checked' : ''}></label>
+    </section>
+
+    <section class="card">
+      <h3>Weight unit</h3>
+      <div class="segmented">
+        <button data-unit="lb" class="${state.unit === 'lb' ? 'active' : ''}">Pounds (lb)</button>
+        <button data-unit="kg" class="${state.unit === 'kg' ? 'active' : ''}">Kilograms (kg)</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Your data</h3>
+      <button class="row-link" data-backup-open><span>Backup &amp; restore</span><span class="muted small">Last backup: ${fmtAgo(state.lastBackup)} ›</span></button>
+    </section>`;
+}
+
+function renderTips() {
+  view.innerHTML = `${pageHead('How to take good progress photos')}
+    <p class="muted intro">Progress is slow, so small changes in how you take the photo can hide it or fake it. Keep everything the same and the only thing that changes is you.</p>
+    <ol class="tips">${TIPS.map((t) => `
+      <li class="card"><h3>${t.title}</h3><p class="tip-do">${t.check}</p><p>${t.why}</p></li>`).join('')}
+    </ol>`;
+}
+
+function saveIcs(share) {
+  const file = icsFile();
+  const done = () => {
+    writePref('reminderSaved', state.reminderTime);
+    $('[data-reminder-status]').textContent = reminderStatus();
+  };
+  if (share) {
+    navigator.share({ files: [file], title: 'Progress photo reminder' }).then(done, () => {});
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  done();
+}
+
 // ---------- gallery ----------
 
 function renderGallery() {
@@ -728,6 +872,24 @@ document.addEventListener('click', async (e) => {
 
   if ('close' in d) return closeSheet();
   if ('backupOpen' in d) return openBackup();
+  if ('back' in d) return go(state.backStack.pop() ?? 'compare', { isBack: true });
+  if ('bannerDismiss' in d) { writePref('bannerDismissed', dayKey(Date.now())); return render(); }
+  if (d.check) {
+    if (guide.checked.has(d.check)) guide.checked.delete(d.check); else guide.checked.add(d.check);
+    return renderGuide();
+  }
+  if ('guideContinue' in d) {
+    if ($('[data-guide-skip]')?.checked) writePref('guideSkip', dayKey(Date.now()));
+    guide.seen = true;
+    return renderCapture();
+  }
+  if ('icsAdd' in d) return saveIcs(false);
+  if ('icsShare' in d) return saveIcs(true);
+  if (d.unit) {
+    state.unit = d.unit;
+    writePref('unit', state.unit);
+    return render();
+  }
   if ('backupCreate' in d) return handleBackupCreate(t);
   if ('backupShare' in d) return handleBackupShare();
   if ('backupDownload' in d) return handleBackupDownload();
@@ -803,6 +965,12 @@ document.addEventListener('change', (e) => {
   } else if ('upload' in t.dataset) {
     handleUpload(t.files[0]).catch(() => toast('Couldn’t read that image'));
     t.value = '';
+  } else if ('reminderTime' in t.dataset) {
+    if (t.value) state.reminderTime = t.value;
+    writePref('reminderTime', state.reminderTime);
+    $('[data-reminder-status]').textContent = reminderStatus();
+  } else if ('guideEnabled' in t.dataset) {
+    writePref('guideEnabled', t.checked ? '1' : '0');
   } else if ('restore' in t.dataset) {
     handleRestore(t.files[0]);
     t.value = '';
@@ -829,15 +997,6 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopCamera(); else startCamera();
 });
 
-const unitBtn = $('#unitToggle');
-unitBtn.textContent = state.unit;
-unitBtn.addEventListener('click', () => {
-  state.unit = state.unit === 'lb' ? 'kg' : 'lb';
-  writePref('unit', state.unit);
-  unitBtn.textContent = state.unit;
-  if (state.view !== 'capture') render();
-});
-
 // ---------- boot ----------
 
 (async () => {
@@ -851,7 +1010,10 @@ unitBtn.addEventListener('click', () => {
   }
   const latest = state.photos[state.photos.length - 1];
   if (latest) state.pose = latest.pose;
-  go(state.photos.length ? 'compare' : 'capture');
+  // ?capture=1 comes from the calendar reminder and the home-screen shortcut.
+  const params = new URLSearchParams(location.search);
+  if (params.has('capture')) history.replaceState(null, '', location.pathname);
+  go(params.has('capture') || !state.photos.length ? 'capture' : 'compare');
 })();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

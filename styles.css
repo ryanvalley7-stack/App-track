@@ -323,3 +323,91 @@ main {
 .backup-ready { margin: 0; font-weight: 700; color: var(--accent); }
 .btn.wide { width: 100%; }
 .row-actions.tight { margin-top: 10px; }
+
+/* ---------- streak & today banner ---------- */
+
+.icon-pill { display: inline-grid; place-items: center; padding: 7px 9px; }
+.icon-pill svg { width: 18px; height: 18px; }
+
+.streak {
+  display: flex; align-items: center; gap: 12px; margin: 6px 0 4px;
+  padding: 12px 14px; border-radius: var(--radius); background: var(--surface);
+}
+.streak .flame { font-size: 28px; line-height: 1; }
+.streak-text { display: flex; flex-direction: column; }
+.streak-text strong { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.streak-text span { font-size: 13px; color: var(--muted); }
+.streak.done .streak-text span { color: var(--accent); }
+
+.today-banner {
+  display: flex; align-items: center; gap: 10px; margin: 8px 0 0;
+  padding: 12px 10px 12px 14px; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.today-banner > div { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.today-banner strong { font-size: 15px; }
+.today-banner span { font-size: 13px; color: var(--muted); }
+.btn.sm { min-height: 38px; padding: 8px 14px; font-size: 14px; border-radius: 11px; flex: none; }
+.icon-btn.sm { width: 32px; height: 32px; font-size: 13px; flex: none; color: var(--muted); }
+
+/* ---------- guide ---------- */
+
+.guide { padding-top: 8px; }
+.guide h2 { margin: 4px 0 4px; font-size: 22px; letter-spacing: -0.02em; }
+.guide .muted, .card .muted, .intro { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+.checklist { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.check-item {
+  width: 100%; display: flex; align-items: flex-start; gap: 12px; text-align: left;
+  padding: 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
+  font-size: 15px; transition: background 0.15s, border-color 0.15s;
+}
+.check-item .box {
+  flex: none; width: 22px; height: 22px; margin-top: 1px; border-radius: 7px;
+  border: 2px solid var(--muted); display: grid; place-items: center;
+}
+.check-item.done { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.check-item.done .box { background: var(--accent); border-color: var(--accent); }
+.check-item.done .box::after { content: "✓"; color: var(--accent-ink); font-size: 14px; font-weight: 900; }
+.check-item.done span:last-child { color: var(--muted); }
+.btn .progress { margin-left: 8px; font-size: 13px; opacity: 0.65; }
+.link-btn {
+  display: block; margin: 12px auto 0; padding: 8px; background: none; border: 0;
+  color: var(--accent); font-weight: 600; font-size: 14px;
+}
+
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 2px; font-size: 15px; cursor: pointer;
+}
+.guide .toggle-row { justify-content: flex-start; color: var(--muted); }
+.toggle-row input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; margin: 0; }
+
+/* ---------- settings & tips ---------- */
+
+.page-head { display: flex; align-items: center; gap: 10px; margin: 6px 0 14px; }
+.page-head h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; line-height: 1.2; }
+.page-head .icon-btn { flex: none; font-size: 24px; line-height: 1; padding-bottom: 3px; }
+
+.card { padding: 16px; border-radius: var(--radius); background: var(--surface); margin-bottom: 12px; }
+.card h3 { margin: 0 0 6px; font-size: 16px; }
+.card .small { font-size: 13px; margin: 10px 0 0; }
+.field-inline { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; }
+.field-inline input {
+  padding: 8px 12px; border-radius: 12px; min-height: 44px;
+  background: var(--bg); border: 1px solid var(--border); font-size: 16px;
+}
+.row-link {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 2px; background: none; border: 0; font-size: 15px; text-align: left;
+}
+.card .segmented { margin: 4px 0 0; background: var(--bg); }
+.help { margin-top: 12px; font-size: 14px; }
+.help summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.help p { color: var(--muted); margin: 8px 0 0; }
+
+.tips { list-style: none; margin: 0; padding: 0; counter-reset: tip; }
+.tips li { counter-increment: tip; }
+.tips h3::before { content: counter(tip) ". "; color: var(--accent); }
+.tips p { margin: 6px 0 0; font-size: 15px; color: #c9ced6; }
+.tips .tip-do { color: var(--text); font-weight: 600; font-size: 14px; }
