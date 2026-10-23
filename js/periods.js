@@ -1,5 +1,5 @@
-// Month-based periods for comparing ranges of photos. A period is an inclusive
-// range of months: { from: 'YYYY-MM', to: 'YYYY-MM' }.
+// Month-based periods, used to group the gallery by month. A period is an
+// inclusive range of months: { from: 'YYYY-MM', to: 'YYYY-MM' }.
 import { dayKey } from './streak.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -12,18 +12,6 @@ export function monthKey(ms) {
 function parse(key) {
   const [y, m] = key.split('-').map(Number);
   return [y, m - 1];
-}
-
-// Every month from `from` to `to`, inclusive.
-export function monthsBetween(from, to) {
-  const out = [];
-  let [y, m] = parse(from);
-  const [ty, tm] = parse(to);
-  while (y < ty || (y === ty && m <= tm)) {
-    out.push(`${y}-${pad(m + 1)}`);
-    if (++m === 12) { m = 0; y++; }
-  }
-  return out;
 }
 
 // [start, end) in local time.
@@ -58,15 +46,4 @@ export function avgWeight(photos, weightOf) {
 export function monthLabel(key, opts = { month: 'short', year: 'numeric' }) {
   const [y, m] = parse(key);
   return new Date(y, m, 1).toLocaleDateString(undefined, opts);
-}
-
-export function periodLabel({ from, to }) {
-  if (from === to) return monthLabel(from);
-  if (from.slice(0, 4) === to.slice(0, 4)) return `${monthLabel(from, { month: 'short' })} – ${monthLabel(to)}`;
-  return `${monthLabel(from)} – ${monthLabel(to)}`;
-}
-
-// Keeps from <= to.
-export function normalize(period) {
-  return period.from <= period.to ? period : { from: period.to, to: period.from };
 }

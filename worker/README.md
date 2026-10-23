@@ -97,9 +97,9 @@ Commit and push. GitHub Pages or Netlify redeploys the app in a minute or two. T
 ## 8. Turn reminders on (iPhone)
 
 1. Open Gym Progress **from its Home Screen icon**. iOS (16.4 or later) only allows notifications for apps added to the Home Screen, not for Safari tabs. If the app was already open, close it from the app switcher and reopen it, so it loads the new version.
-2. Go to **Settings** (the sliders icon), set **Remind me at**, and tap **Enable reminders**.
+2. Open the **Settings** tab, set **Remind me at**, and tap **Enable reminders**.
 3. Tap **Allow** when iOS asks.
-4. Tap **Send test notification**. It should arrive within a few seconds.
+4. Tap **Send test**. It should arrive within a few seconds.
 
 Reminders then come every day at that time, saying something like "Progress pic time. Day 12 streak." They're skipped on days you've already taken a photo. Tapping one opens the camera. Change the time in Settings at any time, or tap **Turn off**.
 

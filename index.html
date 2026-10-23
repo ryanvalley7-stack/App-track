@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0e1013">
+  <meta name="theme-color" content="#0b0c0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Progress">
+  <meta name="format-detection" content="telephone=no">
   <title>Gym Progress</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -16,31 +17,37 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Gym Progress</h1>
-    <div class="topbar-actions">
-      <button id="backupBtn" class="pill" data-backup-open aria-label="Backup and restore">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 15v4h14v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Backup<span class="dot" hidden></span>
-      </button>
-      <button class="pill icon-pill" data-view="settings" aria-label="Settings">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="15" cy="6" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="12" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17" cy="18" r="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-      </button>
-    </div>
+    <button class="nav-back" data-back aria-label="Back" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <h1 id="title">Compare</h1>
+    <div class="topbar-actions" id="headerActions"></div>
   </header>
 
   <main id="view" aria-live="polite"></main>
 
-  <nav class="tabbar">
+  <nav class="tabbar" aria-label="Sections">
     <button data-view="compare" class="tab">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h8v14H3zM13 5h8v14h-8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="16" rx="2"/><rect x="13" y="4" width="8" height="16" rx="2"/></svg>
       <span>Compare</span>
     </button>
-    <button data-view="capture" class="tab tab-capture" aria-label="Take photo">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-    </button>
     <button data-view="gallery" class="tab">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
       <span>Gallery</span>
+    </button>
+    <button data-view="capture" class="tab tab-capture" aria-label="Camera">
+      <span class="tab-capture-ring">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      </span>
+    </button>
+    <button data-view="meals" class="tab">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v6a2 2 0 0 0 4 0V3M9 11v10M17 21V3c-2 1-3.5 3.5-3.5 7v3H17"/></svg>
+      <span>Meals</span>
+    </button>
+    <button data-view="settings" class="tab">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+      <span>Settings</span>
+      <i class="tab-dot" hidden></i>
     </button>
   </nav>
 
