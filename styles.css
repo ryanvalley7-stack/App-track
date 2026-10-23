@@ -291,15 +291,7 @@ body.sheet-open main { overflow: hidden; }
 .compare-stats span { color: var(--muted); font-size: 14px; }
 .compare-hint { margin: 14px 8px 4px; text-align: center; color: var(--muted); font-size: 15px; }
 
-.quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0 0; }
-.quick button {
-  min-height: 44px; padding: 0 6px; border-radius: 12px; border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); font-size: 14px; font-weight: 650; line-height: 1.15;
-}
-.quick button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-.quick button:disabled { opacity: 0.35; }
-
-.compare-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.compare-actions { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
 .compare-actions .segmented { flex: 1; }
 .compare-actions .icon-btn { width: 50px; height: 50px; border-radius: 14px; }
 
@@ -531,15 +523,16 @@ body.sheet-open main { overflow: hidden; }
 
 .toast {
   position: fixed; left: 50%; z-index: 40;
-  bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 16px);
+  top: calc(var(--safe-top) + 8px); /* top of the screen, clear of the shutter and tab bar */
+  max-width: calc(100% - 32px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   transform: translateX(-50%); padding: 12px 20px; border-radius: 999px;
   background: var(--text); color: var(--bg); font-weight: 700; font-size: 15px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
   animation: toast-in 0.28s var(--ease);
   transition: opacity 0.3s, transform 0.3s var(--ease);
 }
-.toast.out { opacity: 0; transform: translate(-50%, 8px); }
-@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+.toast.out { opacity: 0; transform: translate(-50%, -8px); }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -12px); } }
 
 /* ---------- motion & larger screens ---------- */
 
@@ -550,3 +543,34 @@ body.sheet-open main { overflow: hidden; }
 @media (min-width: 640px) {
   main > * { max-width: 560px; margin-left: auto; margin-right: auto; }
 }
+
+/* ---------- compare timeline strip & camera session ---------- */
+
+.strip-head { margin: 16px 2px 8px; font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.filmstrip {
+  position: relative;
+  display: flex; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain;
+  margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) 4px;
+  scroll-snap-type: x proximity; scroll-padding: 0 var(--gutter); scrollbar-width: none;
+}
+.filmstrip::-webkit-scrollbar { display: none; }
+.film {
+  flex: none; width: 76px; padding: 0; border: 0; background: none; text-align: center;
+  display: flex; flex-direction: column; align-items: stretch; gap: 3px; scroll-snap-align: start;
+}
+.film-img {
+  display: block; aspect-ratio: 3 / 4; overflow: hidden; border-radius: 12px; background: var(--surface);
+  outline: 3px solid transparent; outline-offset: -3px; transition: outline-color 0.15s;
+}
+.film-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.film.selected .film-img { outline-color: var(--text); }
+.film-when { font-size: 13px; font-weight: 750; }
+.film.selected .film-when { color: var(--text); }
+.film-date { font-size: 11px; color: var(--muted); margin-top: -3px; }
+
+.pose-tabs > .done { position: relative; }
+.pose-tabs .tick {
+  position: absolute; top: 4px; right: 4px; width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--accent); color: var(--accent-ink);
+}
+.pose-tabs .tick svg { width: 11px; height: 11px; stroke-width: 3.5; }

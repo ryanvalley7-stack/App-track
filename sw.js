@@ -1,5 +1,5 @@
 // Caches the app shell so it opens offline. Photos live in IndexedDB, not here.
-const CACHE = 'gym-progress-v6';
+const CACHE = 'gym-progress-v7';
 const SHELL = [
   './',
   'index.html',

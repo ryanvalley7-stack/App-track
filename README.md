@@ -4,16 +4,20 @@ A small installable web app for taking before/after gym photos and comparing the
 
 ## Features
 
+- **Quick daily routine**
+  - Opening the app on a day without photos goes straight to the camera
+  - After each photo the camera stays open and moves to the next pose (Front → Side → Back → Flex), ticking off the ones you've done; today's weight is filled in for you after the first photo
+  - Tap **Done** (or finish all four poses) to land on Compare showing today's photo
 - **Camera capture** with a 3:4 portrait crop so every photo lines up
   - **Ghost overlay** of your last photo for the same pose, to match position and distance
   - Rule-of-thirds grid, 3s/10s self-timer, front/back camera flip
   - Upload from your photo library instead (the original date is kept)
 - **Poses**: Front, Side, Back, Flex, each tracked separately
 - **Compare**
-  - Pick a pose with the big tabs at the top, then tap the **Before** or **After** slot to choose a photo from a grid of thumbnails (newest first, date under each)
-  - Quick picks: **First vs latest**, **Last 30 days**, **Last 90 days** (latest photo against the one taken closest to 30 or 90 days ago)
-  - **Side by side** or a **Slider** you drag to reveal before vs. after, with the days between photos and the weight change
-  - Each pose remembers its own picks; a pose with one photo fills only Before
+  - Opens on your latest photo next to your first one, with the days between them and the weight change
+  - A timeline strip underneath shows every earlier photo with how long ago it was ("3w ago", "2mo ago") and its date: tap one to compare against it
+  - Tap the **Before** or **After** slot to choose any photo from a grid of thumbnails (newest first)
+  - **Side by side** or a **Slider** you drag to reveal before vs. after
   - **Save comparison image** exports one labelled side-by-side JPG (uses the share sheet on phones)
 - **Gallery** of every photo grouped by month, with each month's average weight. Tap a photo to set it as Before or After, or delete it.
 - **Meals** tab: reserved for meal tracking (coming soon)

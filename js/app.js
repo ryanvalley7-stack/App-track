@@ -15,7 +15,6 @@ const MAX_DIM = 1600;
 const THUMB_DIM = 480;
 const KG_PER_LB = 0.45359237;
 const DAY = 86400000;
-const QUICK = [['all', 'First vs latest'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
 const TITLES = { compare: 'Compare', capture: 'Camera', gallery: 'Gallery', meals: 'Meals', settings: 'Settings', tips: 'Photo tips' };
 
 const state = {
@@ -129,6 +128,27 @@ function photosFor(pose) {
   return state.photos.filter((p) => p.pose === pose);
 }
 
+// Poses with a photo dated today or saved since the app opened (an upload
+// from the library may be dated earlier but still belongs to this session).
+const sessionPoses = new Set();
+function posesDoneToday() {
+  const today = dayKey(Date.now());
+  const done = new Set(state.photos.filter((p) => dayKey(p.takenAt) === today).map((p) => p.pose));
+  sessionPoses.forEach((pose) => done.add(pose));
+  return done;
+}
+
+// "Today", "5d ago", "3w ago", "2mo ago"…
+function ago(ms) {
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(ms).setHours(0, 0, 0, 0)) / DAY);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 14) return `${days}d ago`;
+  if (days < 60) return `${Math.round(days / 7)}w ago`;
+  if (days < 365) return `${Math.round(days / 30.4)}mo ago`;
+  return `${round1(days / 365)}y ago`;
+}
+
 function photoById(id) {
   return id == null ? null : state.photos.find((p) => p.id === id) ?? null;
 }
@@ -183,10 +203,12 @@ function drawCover(ctx, img, x, y, w, h) {
 }
 
 // Big segmented pose tabs. `action` is the data attribute the buttons carry.
-function poseTabs(active, { includeAll = false, action = 'pose' } = {}) {
+// Big segmented pose tabs. `action` is the data attribute the buttons carry;
+// poses in `done` get a check mark (used by the camera for today's photos).
+function poseTabs(active, { includeAll = false, action = 'pose', done = new Set() } = {}) {
   const opts = includeAll ? [{ id: 'all', label: 'All' }, ...POSES] : POSES;
   return `<div class="pose-tabs" role="tablist" aria-label="Pose">${opts.map((p) => `
-    <button class="${p.id === active ? 'active' : ''}" data-${action}="${p.id}" role="tab" aria-selected="${p.id === active}">${p.label}</button>`).join('')}
+    <button class="${p.id === active ? 'active' : ''} ${done.has(p.id) ? 'done' : ''}" data-${action}="${p.id}" role="tab" aria-selected="${p.id === active}">${done.has(p.id) ? `<span class="tick" aria-label="done today">${icon('check')}</span>` : ''}${p.label}</button>`).join('')}
   </div>`;
 }
 
@@ -259,6 +281,8 @@ function renderHeader() {
     const { current, doneToday } = streaks(state.photos);
     actions.innerHTML = `<span class="streak ${doneToday ? 'done' : ''}" title="${current}-day streak">
       <span aria-hidden="true">${current ? '🔥' : '💤'}</span>${current ? `${current}-day streak` : 'No streak'}${doneToday ? ' ✓' : ''}</span>`;
+  } else if (state.view === 'capture' && posesDoneToday().size) {
+    actions.innerHTML = '<button class="btn primary sm" data-done>Done</button>';
   } else {
     actions.innerHTML = '';
   }
@@ -291,20 +315,6 @@ function setPick(pose, side, id) {
   if (pick[other] === id) pick[other] = pick[side]; // choosing the other slot's photo swaps them
   pick[side] = id;
   state.compare.picks[pose] = pick;
-}
-
-// Quick picks: latest photo as After, and as Before either the first photo or
-// the one taken closest to 30/90 days ago.
-function quickPair(kind, list) {
-  if (list.length < 2) return null;
-  const latest = list[list.length - 1];
-  if (kind === 'all') return { before: list[0].id, after: latest.id };
-  const target = Date.now() - Number(kind) * DAY;
-  let best = null;
-  for (const p of list) {
-    if (p.id !== latest.id && (!best || Math.abs(p.takenAt - target) < Math.abs(best.takenAt - target))) best = p;
-  }
-  return { before: best.id, after: latest.id };
 }
 
 function slotHtml(side, photo, compact = false) {
@@ -350,10 +360,17 @@ function renderCompare() {
       : list.length === 1 ? `Take another ${poseLabel(state.pose).toLowerCase()} photo to compare.` : 'Tap a slot to choose a photo.'}</p>`;
   }
 
-  const activeQuick = QUICK.find(([k]) => {
-    const q = quickPair(k, list);
-    return q && both && q.before === before.id && q.after === after.id;
-  })?.[0];
+  // Every other photo of this pose, oldest → newest: tap one to compare it with After.
+  const others = list.filter((p) => p.id !== after?.id);
+  const strip = after && others.length ? `
+    <div class="strip-head"><span>Compare ${shortDate(after.takenAt)} with</span></div>
+    <div class="filmstrip" role="list">${others.map((p, i) => `
+      <button class="film ${before?.id === p.id ? 'selected' : ''}" data-film="${p.id}" role="listitem" aria-pressed="${before?.id === p.id}">
+        <span class="film-img"><img src="${urlFor(p, 'thumb')}" alt="" loading="lazy"></span>
+        <span class="film-when">${i === 0 ? 'Start' : ago(p.takenAt)}</span>
+        <span class="film-date">${shortDate(p.takenAt)}</span>
+      </button>`).join('')}
+    </div>` : '';
 
   view.innerHTML = `
     ${todayBanner()}
@@ -370,9 +387,7 @@ function renderCompare() {
       <div class="slots compact">${slotHtml('before', before, true)}${slotHtml('after', after, true)}</div>`
     : `<div class="slots">${slotHtml('before', before)}${slotHtml('after', after)}</div>`}
     ${stats}
-    <div class="quick" role="group" aria-label="Quick compare">
-      ${QUICK.map(([k, label]) => `<button class="${activeQuick === k ? 'active' : ''}" data-quick="${k}" ${list.length < 2 ? 'disabled' : ''}>${label}</button>`).join('')}
-    </div>
+    ${strip}
     <div class="compare-actions">
       <div class="segmented" role="tablist" aria-label="View">
         <button data-mode="side" class="${c.mode === 'side' ? 'active' : ''}" role="tab" aria-selected="${c.mode === 'side'}">Side by side</button>
@@ -380,6 +395,11 @@ function renderCompare() {
       </div>
       <button class="icon-btn filled" data-export ${both ? '' : 'disabled'} aria-label="Save comparison image">${icon('share')}</button>
     </div>`;
+  const film = $('.filmstrip');
+  if (film) {
+    const sel = $('.film.selected', film);
+    film.scrollLeft = sel ? sel.offsetLeft - (film.clientWidth - sel.offsetWidth) / 2 : film.scrollWidth;
+  }
 }
 
 function openPicker(side) {
@@ -495,7 +515,7 @@ function renderGuide() {
 function renderCapture() {
   if (shouldShowGuide()) return renderGuide();
   const ghost = ghostPhoto();
-  view.innerHTML = `${poseTabs(state.pose)}
+  view.innerHTML = `${poseTabs(state.pose, { done: posesDoneToday() })}
     <div class="cam-frame ${camera.grid ? 'show-grid' : ''}">
       <video id="camVideo" playsinline muted autoplay></video>
       <img class="ghost" id="ghostImg" alt="" ${ghost ? `src="${urlFor(ghost)}"` : 'hidden'} style="opacity:${camera.ghost}">
@@ -519,6 +539,29 @@ function renderCapture() {
       <button class="cam-round" data-flip aria-label="Switch camera">${icon('flip')}</button>
     </div>`;
   startCamera();
+}
+
+// Switches pose on the camera screen in place, so the camera stream keeps running.
+function selectCapturePose(pose) {
+  state.pose = pose;
+  if (!$('.cam-frame')) return render(); // still on the checklist
+  const done = posesDoneToday();
+  $('.pose-tabs').outerHTML = poseTabs(pose, { done });
+  const ghost = ghostPhoto();
+  const img = $('#ghostImg');
+  const ctl = $('[data-ghost]');
+  if (ghost) img.src = urlFor(ghost); else img.removeAttribute('src');
+  img.hidden = !ghost;
+  ctl.disabled = !ghost;
+  ctl.closest('label').classList.toggle('disabled', !ghost);
+}
+
+// Leaves the camera for Compare, on the first pose taken today.
+function finishSession(fallbackPose = state.pose) {
+  document.querySelectorAll('.toast').forEach((t) => t.remove());
+  const done = posesDoneToday();
+  state.pose = POSES.find((p) => done.has(p.id))?.id ?? fallbackPose;
+  go('compare');
 }
 
 function showCamMsg(msg) {
@@ -638,6 +681,9 @@ function closeSheet({ immediate = false } = {}) {
 function openReview(blob, takenAt) {
   const preview = URL.createObjectURL(blob);
   const prev = ghostPhoto();
+  // Weight you already logged today, so it's typed once per session.
+  const today = dayKey(Date.now());
+  const weighed = state.photos.filter((p) => dayKey(p.takenAt) === today && p.weight != null).pop();
   openSheet(`
     <form class="review" data-review>
       <div class="sheet-head"><h2>Save photo</h2></div>
@@ -650,7 +696,7 @@ function openReview(blob, takenAt) {
       </fieldset>
       <div class="field-row">
         <label class="field">Date <input type="date" name="date" value="${toDateInput(takenAt)}" max="${toDateInput(Date.now())}"></label>
-        <label class="field">Weight (${state.unit}) <input type="number" name="weight" inputmode="decimal" step="0.1" min="0" placeholder="Optional"></label>
+        <label class="field">Weight (${state.unit}) <input type="number" name="weight" inputmode="decimal" step="0.1" min="0" placeholder="Optional" value="${weighed ? round1(weightIn(weighed)) : ''}"></label>
       </div>
       <label class="field">Note <input type="text" name="note" maxlength="140" placeholder="Optional" enterkeyhint="done"></label>
       <div class="row-actions">
@@ -678,12 +724,20 @@ function openReview(blob, takenAt) {
         note: String(data.get('note') || '').trim(),
       });
       closeSheet();
-      state.pose = pose;
       // The new photo becomes After; a pose's first photo becomes Before.
       if (photosFor(pose).length === 1) state.compare.picks[pose] = { before: id, after: null };
       else setPick(pose, 'after', id);
-      toast('Saved');
-      go('compare');
+      sessionPoses.add(pose);
+      // Stay in the camera for the next pose not taken today; after the last one, show the comparison.
+      const done = posesDoneToday();
+      const next = POSES.find((p) => !done.has(p.id));
+      if (state.view === 'capture' && next) {
+        selectCapturePose(next.id);
+        renderHeader();
+        toast(`${poseLabel(pose)} saved ✓  Next: ${next.label}`);
+      } else {
+        finishSession(pose);
+      }
     } catch (err) {
       console.error(err);
       toast('Couldn’t save — storage may be full');
@@ -1093,25 +1147,14 @@ document.addEventListener('click', async (e) => {
   if ('goCamera' in d) { closeSheet(); return go('capture'); }
 
   if (d.pose) {
-    state.pose = d.pose;
-    if (state.view === 'capture') {
-      // Update in place so the camera stream keeps running.
-      document.querySelectorAll('[data-pose]').forEach((c) => {
-        c.classList.toggle('active', c.dataset.pose === d.pose);
-        c.setAttribute('aria-selected', c.dataset.pose === d.pose);
-      });
-      const ghost = ghostPhoto();
-      const img = $('#ghostImg');
-      const ctl = $('[data-ghost]');
-      if (ghost) img.src = urlFor(ghost); else img.removeAttribute('src');
-      img.hidden = !ghost;
-      ctl.disabled = !ghost;
-      ctl.closest('label').classList.toggle('disabled', !ghost);
-    } else {
+    if (state.view === 'capture') selectCapturePose(d.pose);
+    else {
+      state.pose = d.pose;
       render();
     }
     return;
   }
+  if ('done' in d) return finishSession();
   if (d.gpose) { state.galleryPose = d.gpose; return render(); }
   if (d.open) return openDetail(Number(d.open));
   if (d.slot) return openPicker(d.slot);
@@ -1120,9 +1163,8 @@ document.addEventListener('click', async (e) => {
     closeSheet();
     return render();
   }
-  if (d.quick) {
-    const q = quickPair(d.quick, photosFor(state.pose));
-    if (q) state.compare.picks[state.pose] = q;
+  if (d.film) {
+    setPick(state.pose, 'before', Number(d.film));
     return render();
   }
   if (d.mode) { state.compare.mode = d.mode; return render(); }
@@ -1211,12 +1253,14 @@ document.addEventListener('visibilitychange', () => {
     view.innerHTML = '<div class="empty"><h2>Storage unavailable</h2><p>This browser blocked on-device storage (private mode?). Photos can’t be saved.</p></div>';
     return;
   }
-  const latest = state.photos[state.photos.length - 1];
-  if (latest) state.pose = latest.pose;
+  // Opening the app on a day without photos goes straight to the camera
+  // (starting with Front); otherwise to the comparison of today's first pose.
+  const done = posesDoneToday();
+  state.pose = POSES.find((p) => done.has(p.id))?.id ?? 'front';
   // ?capture=1 comes from a reminder notification and the home-screen shortcut.
   const params = new URLSearchParams(location.search);
   if (params.has('capture')) history.replaceState(null, '', location.pathname);
-  go(params.has('capture') || !state.photos.length ? 'capture' : 'compare');
+  go(params.has('capture') || !done.size ? 'capture' : 'compare');
   try {
     localStorage.removeItem('gp:reminderSaved'); // left over from calendar reminders
     localStorage.removeItem('gp:compareKind');   // left over from Dates/Periods/Timeline
