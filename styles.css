@@ -411,3 +411,46 @@ main {
 .tips h3::before { content: counter(tip) ". "; color: var(--accent); }
 .tips p { margin: 6px 0 0; font-size: 15px; color: #c9ced6; }
 .tips .tip-do { color: var(--text); font-weight: 600; font-size: 14px; }
+
+/* ---------- compare modes: periods & timeline ---------- */
+
+.segmented.kind { grid-template-columns: repeat(3, 1fr); margin: 10px 0 2px; }
+.segmented.small { margin: 0 0 10px; }
+.segmented.small button { padding: 6px; font-size: 13px; }
+
+.pickers.ranges { align-items: start; }
+.pickers.ranges > .icon-btn { margin-top: 44px; }
+.picker .range-to { font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--muted); text-align: center; }
+.picker select { min-width: 0; }
+.pickers.two { grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.picker select:disabled { opacity: 0.6; }
+
+.panel-empty {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 16px 16px 56px;
+  text-align: center; color: var(--muted); font-size: 14px;
+  border: 2px dashed var(--border); border-radius: var(--radius);
+}
+.stats .delta strong { color: var(--accent); }
+
+.timeline-strip {
+  display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 4px; padding: 4px 16px 12px;
+  scroll-snap-type: x proximity; scroll-padding: 0 16px; scrollbar-width: none;
+}
+.timeline-strip::-webkit-scrollbar { display: none; }
+.tl-card {
+  position: relative; flex: none; width: 116px; aspect-ratio: 3 / 4; padding: 0; overflow: hidden;
+  border-radius: 14px; border: 2px solid transparent; background: var(--surface);
+  scroll-snap-align: start; text-align: left;
+}
+.tl-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tl-card.selected { border-color: var(--accent); }
+.tl-card .badge { top: 6px; left: 6px; font-size: 9px; padding: 3px 7px; }
+.tl-card.empty { border: 2px dashed var(--border); background: transparent; }
+.tl-none { position: absolute; inset: 0 0 36px; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.tl-meta {
+  position: absolute; inset: auto 0 0 0; display: flex; flex-direction: column;
+  padding: 20px 8px 6px; font-size: 12px; line-height: 1.25;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.8));
+}
+.tl-card.empty .tl-meta { background: none; }
+.tl-meta span { color: #d4d8de; font-size: 11px; }

@@ -2,6 +2,7 @@ import * as db from './db.js';
 import { createZip, readZip } from './zip.js';
 import { dayKey, streaks, buildIcs } from './reminders.js';
 import { TIPS } from './guide.js';
+import { monthKey, monthsBetween, photosInPeriod, avgWeight, monthLabel, periodLabel, normalize } from './periods.js';
 
 const POSES = [
   { id: 'front', label: 'Front' },
@@ -18,7 +19,17 @@ const state = {
   view: 'compare',
   pose: 'front',
   galleryPose: 'all',
-  compare: { beforeId: null, afterId: null, mode: 'side', split: 50 },
+  compare: {
+    kind: readPref('compareKind', 'dates'), // dates | periods | timeline
+    beforeId: null,
+    afterId: null,
+    mode: 'side',        // side | slider
+    split: 50,
+    periodKind: 'month', // month | custom
+    periods: null,       // { before: {from, to}, after: {from, to} } once picked; null = default per pose
+    periodPick: {},      // side → photo id chosen inside the period
+    timeline: null,      // selected month keys; null = default per pose
+  },
   unit: readPref('unit', 'lb'),
   lastBackup: Number(readPref('lastBackup', 0)),
   reminderTime: readPref('reminderTime', '07:00'),
@@ -222,6 +233,17 @@ function homeHeader() {
 
 // ---------- compare ----------
 
+const KINDS = [['dates', 'Dates'], ['periods', 'Periods'], ['timeline', 'Timeline']];
+const round1 = (n) => Math.round(n * 10) / 10;
+
+function fmtDelta(d) {
+  return `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d)} ${state.unit}`;
+}
+
+function fmtAvg(a) {
+  return a ? `${round1(a.avg)} ${state.unit}` : '—';
+}
+
 function resolveCompare() {
   const list = photosFor(state.pose);
   const ids = new Set(list.map((p) => p.id));
@@ -235,12 +257,129 @@ function resolveCompare() {
   };
 }
 
-function renderCompare() {
-  const { list, before, after } = resolveCompare();
+function datesSides() {
+  const { before, after } = resolveCompare();
+  return [before, after].map((p, i) => ({
+    side: i ? 'after' : 'before',
+    photo: p,
+    title: fmtDate(p.takenAt),
+    sub: fmtWeight(p),
+    short: fmtDate(p.takenAt, { month: 'short', day: 'numeric' }),
+  }));
+}
+
+// For each period: the pose's photos inside it, the chosen photo (closest to
+// the period's start unless one was picked), and the average bodyweight.
+function periodSides(before, after, picks = {}) {
+  const list = photosFor(state.pose);
+  return [['before', before], ['after', after]].map(([side, period]) => {
+    const inside = photosInPeriod(list, period);
+    const photo = inside.find((p) => p.id === picks[side]) ?? inside[0] ?? null;
+    const avg = avgWeight(photosInPeriod(state.photos, period), (p) => weightIn(p));
+    const label = periodLabel(period);
+    return {
+      side, period, inside, photo, avg,
+      title: label,
+      short: label,
+      sub: photo ? [`Photo ${fmtDate(photo.takenAt, { month: 'short', day: 'numeric' })}`, avg && `Avg ${fmtAvg(avg)}`].filter(Boolean).join(' · ') : '',
+      empty: `No ${poseLabel(state.pose).toLowerCase()} photo in ${label}`,
+    };
+  });
+}
+
+// Until the user picks periods, default to the first and last month with a photo of this pose.
+function currentPeriods() {
   const c = state.compare;
+  if (c.periods) return c.periods;
+  const list = photosFor(state.pose);
+  const a = monthKey(list[0].takenAt);
+  const b = monthKey(list[list.length - 1].takenAt);
+  return { before: { from: a, to: a }, after: { from: b, to: b } };
+}
+
+function timelineMonths() {
+  const list = photosFor(state.pose);
+  if (!list.length) return [];
+  return monthsBetween(monthKey(list[0].takenAt), monthKey(list[list.length - 1].takenAt)).map((key) => {
+    const period = { from: key, to: key };
+    const inside = photosInPeriod(list, period);
+    return { key, period, photo: inside[0] ?? null, count: inside.length, avg: avgWeight(photosInPeriod(state.photos, period), (p) => weightIn(p)) };
+  });
+}
+
+// Selected months, oldest first. Defaults to the first and last month with a photo.
+function timelineSelection(months) {
+  const withPhoto = months.filter((m) => m.photo).map((m) => m.key);
+  const sel = state.compare.timeline ?? (withPhoto.length > 1 ? [withPhoto[0], withPhoto[withPhoto.length - 1]] : withPhoto);
+  return sel.filter((k) => withPhoto.includes(k));
+}
+
+function timelineSides() {
+  const sel = timelineSelection(timelineMonths()).slice().sort();
+  if (sel.length < 2) return null;
+  return periodSides({ from: sel[0], to: sel[0] }, { from: sel[1], to: sel[1] });
+}
+
+function comparisonHtml(sides) {
+  const c = state.compare;
+  const [b, a] = sides;
+  const display = `
+    <div class="segmented" role="tablist">
+      <button data-mode="side" class="${c.mode === 'side' ? 'active' : ''}">Side by side</button>
+      <button data-mode="slider" class="${c.mode === 'slider' ? 'active' : ''}">Slider</button>
+    </div>`;
+  if (c.mode === 'slider' && b.photo && a.photo) {
+    return `${display}
+      <div class="slider-stage" style="--split:${c.split}%">
+        <img class="after-img" src="${urlFor(a.photo)}" alt="After — ${a.title}">
+        <img class="before-img" src="${urlFor(b.photo)}" alt="Before — ${b.title}">
+        <div class="slider-handle"></div>
+        <span class="badge before">Before · ${b.short}</span>
+        <span class="badge after">After · ${a.short}</span>
+        <input type="range" min="0" max="100" value="${c.split}" data-split aria-label="Reveal before / after">
+      </div>`;
+  }
+  return `${display}
+    <div class="side-by-side">
+      ${sides.map((s) => `
+        <figure class="panel">
+          ${s.photo ? `<img src="${urlFor(s.photo)}" alt="${s.side} — ${s.title}">` : `<div class="panel-empty">${s.empty}</div>`}
+          <span class="badge ${s.side}">${s.side === 'before' ? 'Before' : 'After'}</span>
+          <figcaption><strong>${s.title}</strong>${s.sub ? `<span>${s.sub}</span>` : ''}</figcaption>
+        </figure>`).join('')}
+    </div>`;
+}
+
+function periodStatsHtml(sides) {
+  const [a, b] = sides.map((s) => s.avg);
+  const change = a && b ? round1(b.avg - a.avg) : null;
+  const tile = (s) => `<div><strong>${fmtAvg(s.avg)}</strong><span>${s.title} avg${s.avg ? ` · ${s.avg.days} day${s.avg.days === 1 ? '' : 's'}` : ''}</span></div>`;
+  return `
+    <div class="stats">
+      ${tile(sides[0])}
+      ${tile(sides[1])}
+      <div class="${change != null ? 'delta' : ''}"><strong>${change == null ? '—' : fmtDelta(change)}</strong><span>avg weight change</span></div>
+    </div>`;
+}
+
+function exportButton(enabled) {
+  return `<div class="row-actions"><button class="btn primary" data-export ${enabled ? '' : 'disabled'}>Save comparison image</button></div>`;
+}
+
+function renderCompare() {
+  const c = state.compare;
+  const list = photosFor(state.pose);
+  const strip = $('.timeline-strip');
+  const stripScroll = strip ? strip.scrollLeft : null;
+
+  const head = `${homeHeader()}
+    <div class="segmented kind" role="tablist">
+      ${KINDS.map(([id, label]) => `<button data-kind="${id}" class="${c.kind === id ? 'active' : ''}">${label}</button>`).join('')}
+    </div>
+    ${poseChips(state.pose)}`;
 
   if (list.length === 0) {
-    view.innerHTML = `${homeHeader()}${poseChips(state.pose)}
+    view.innerHTML = `${head}
       <div class="empty">
         <div class="empty-art"><div></div><div></div></div>
         <h2>No ${poseLabel(state.pose).toLowerCase()} photos yet</h2>
@@ -250,16 +389,25 @@ function renderCompare() {
     return;
   }
 
+  if (c.kind === 'periods') view.innerHTML = head + periodsHtml();
+  else if (c.kind === 'timeline') view.innerHTML = head + timelineHtml();
+  else view.innerHTML = head + datesHtml(list);
+
+  const newStrip = $('.timeline-strip');
+  if (newStrip) newStrip.scrollLeft = stripScroll ?? newStrip.scrollWidth;
+}
+
+function datesHtml(list) {
+  const { before, after } = resolveCompare();
   const option = (p, selectedId) =>
     `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${fmtDate(p.takenAt)}</option>`;
-
   const days = Math.round((after.takenAt - before.takenAt) / 86400000);
   const wb = weightIn(before);
   const wa = weightIn(after);
-  const delta = wb != null && wa != null ? Math.round((wa - wb) * 10) / 10 : null;
+  const delta = wb != null && wa != null ? round1(wa - wb) : null;
   const single = list.length === 1;
 
-  view.innerHTML = `${homeHeader()}${poseChips(state.pose)}
+  return `
     <div class="pickers">
       <label class="picker before"><span>Before</span>
         <select data-pick="beforeId">${list.map((p) => option(p, before.id)).join('')}</select></label>
@@ -267,46 +415,118 @@ function renderCompare() {
       <label class="picker after"><span>After</span>
         <select data-pick="afterId">${list.map((p) => option(p, after.id)).join('')}</select></label>
     </div>
-
-    <div class="segmented" role="tablist">
-      <button data-mode="side" class="${c.mode === 'side' ? 'active' : ''}">Side by side</button>
-      <button data-mode="slider" class="${c.mode === 'slider' ? 'active' : ''}">Slider</button>
-    </div>
-
-    ${c.mode === 'side' ? `
-      <div class="side-by-side">
-        ${[['Before', before], ['After', after]].map(([label, p]) => `
-          <figure class="panel">
-            <img src="${urlFor(p)}" alt="${label} — ${fmtDate(p.takenAt)}">
-            <span class="badge ${label.toLowerCase()}">${label}</span>
-            <figcaption><strong>${fmtDate(p.takenAt)}</strong>${p.weight != null ? `<span>${fmtWeight(p)}</span>` : ''}</figcaption>
-          </figure>`).join('')}
-      </div>` : `
-      <div class="slider-stage" style="--split:${c.split}%">
-        <img class="after-img" src="${urlFor(after)}" alt="After — ${fmtDate(after.takenAt)}">
-        <img class="before-img" src="${urlFor(before)}" alt="Before — ${fmtDate(before.takenAt)}">
-        <div class="slider-handle"></div>
-        <span class="badge before">Before · ${fmtDate(before.takenAt, { month: 'short', day: 'numeric' })}</span>
-        <span class="badge after">After · ${fmtDate(after.takenAt, { month: 'short', day: 'numeric' })}</span>
-        <input type="range" min="0" max="100" value="${c.split}" data-split aria-label="Reveal before / after">
-      </div>`}
-
+    ${comparisonHtml(datesSides())}
     ${single ? `<p class="hint">Only one ${poseLabel(state.pose).toLowerCase()} photo so far — take another to see your progress side by side.</p>` : `
     <div class="stats">
       <div><strong>${Math.abs(days)}</strong><span>day${Math.abs(days) === 1 ? '' : 's'} apart</span></div>
-      <div><strong>${delta == null ? '—' : `${delta > 0 ? '+' : delta < 0 ? '−' : ''}${Math.abs(delta)} ${state.unit}`}</strong><span>weight change</span></div>
+      <div><strong>${delta == null ? '—' : fmtDelta(delta)}</strong><span>weight change</span></div>
       <div><strong>${list.length}</strong><span>${poseLabel(state.pose).toLowerCase()} photos</span></div>
     </div>`}
+    ${exportButton(!single)}`;
+}
 
-    <div class="row-actions">
-      <button class="btn primary" data-export ${single ? 'disabled' : ''}>Save comparison image</button>
+function periodsHtml() {
+  const c = state.compare;
+  const periods = currentPeriods();
+  const sides = periodSides(periods.before, periods.after, c.periodPick);
+  const custom = c.periodKind === 'custom';
+  const allMonths = monthsBetween(monthKey(state.photos[0].takenAt), monthKey(state.photos[state.photos.length - 1].takenAt));
+  const poseList = photosFor(state.pose);
+  const monthOptions = (selected) => allMonths.map((k) => {
+    const n = photosInPeriod(poseList, { from: k, to: k }).length;
+    return `<option value="${k}" ${k === selected ? 'selected' : ''}>${monthLabel(k)} (${n})</option>`;
+  }).join('');
+  const periodPicker = (side) => `
+    <div class="picker ${side}"><span>${side === 'before' ? 'Before' : 'After'}</span>
+      <select data-period="${side}" data-end="from" aria-label="${side} ${custom ? 'start month' : 'month'}">${monthOptions(periods[side].from)}</select>
+      ${custom ? `<span class="range-to">to</span>
+      <select data-period="${side}" data-end="to" aria-label="${side} end month">${monthOptions(periods[side].to)}</select>` : ''}
     </div>`;
+  const photoPicker = (s) => `
+    <label class="picker ${s.side}"><span>${s.side === 'before' ? 'Before' : 'After'} photo</span>
+      <select data-period-pick="${s.side}" ${s.inside.length < 2 ? 'disabled' : ''}>
+        ${s.inside.length ? s.inside.map((p) => `<option value="${p.id}" ${p.id === s.photo.id ? 'selected' : ''}>${fmtDate(p.takenAt, { month: 'short', day: 'numeric' })}${p.weight != null ? ` · ${fmtWeight(p)}` : ''}</option>`).join('') : '<option>None</option>'}
+      </select></label>`;
+
+  return `
+    <div class="segmented small" role="tablist">
+      <button data-period-kind="month" class="${custom ? '' : 'active'}">By month</button>
+      <button data-period-kind="custom" class="${custom ? 'active' : ''}">Custom range</button>
+    </div>
+    <div class="pickers ${custom ? 'ranges' : ''}">
+      ${periodPicker('before')}
+      <button class="icon-btn" data-swap aria-label="Swap before and after">⇄</button>
+      ${periodPicker('after')}
+    </div>
+    ${comparisonHtml(sides)}
+    <div class="pickers two">${sides.map(photoPicker).join('')}</div>
+    ${periodStatsHtml(sides)}
+    ${exportButton(sides.every((s) => s.photo))}`;
+}
+
+function timelineHtml() {
+  const months = timelineMonths();
+  const sel = timelineSelection(months).slice().sort();
+  const sides = sel.length === 2 ? periodSides({ from: sel[0], to: sel[0] }, { from: sel[1], to: sel[1] }) : null;
+
+  return `
+    <div class="timeline-strip" role="list" aria-label="${poseLabel(state.pose)} photos by month">
+      ${months.map((m) => {
+        const i = sel.indexOf(m.key);
+        const meta = `<span class="tl-meta"><strong>${monthLabel(m.key)}</strong><span>${[m.avg && fmtAvg(m.avg), m.count > 1 && `${m.count} photos`].filter(Boolean).join(' · ') || '&nbsp;'}</span></span>`;
+        return m.photo ? `
+        <button class="tl-card ${i >= 0 ? 'selected' : ''}" data-tl="${m.key}" role="listitem" aria-pressed="${i >= 0}">
+          <img src="${urlFor(m.photo, 'thumb')}" alt="${monthLabel(m.key)}" loading="lazy">
+          ${i >= 0 && sel.length === 2 ? `<span class="badge ${i ? 'after' : 'before'}">${i ? 'After' : 'Before'}</span>` : i >= 0 ? '<span class="badge">Selected</span>' : ''}
+          ${meta}
+        </button>` : `
+        <div class="tl-card empty" role="listitem"><span class="tl-none">No photo</span>${meta}</div>`;
+      }).join('')}
+    </div>
+    ${sides ? `
+      ${comparisonHtml(sides)}
+      ${periodStatsHtml(sides)}
+      ${exportButton(true)}` : `
+      <p class="hint">${months.filter((m) => m.photo).length < 2
+        ? `Your timeline fills in as you add ${poseLabel(state.pose).toLowerCase()} photos in more months.`
+        : 'Tap any two months to compare them side by side.'}</p>`}`;
+}
+
+// What to draw for "Save comparison image" in the current mode, or null if not ready.
+function exportSpec() {
+  const c = state.compare;
+  const pose = poseLabel(state.pose);
+  if (c.kind === 'dates') {
+    const { list, before, after } = resolveCompare();
+    if (list.length < 2) return null;
+    const days = Math.round((after.takenAt - before.takenAt) / 86400000);
+    const wb = weightIn(before), wa = weightIn(after);
+    return {
+      sides: datesSides(),
+      footer: [`${Math.abs(days)} days`, wb != null && wa != null && fmtDelta(round1(wa - wb)), pose],
+      name: `progress-${toDateInput(before.takenAt)}-to-${toDateInput(after.takenAt)}`,
+    };
+  }
+  let sides;
+  if (c.kind === 'timeline') sides = timelineSides();
+  else {
+    const p = currentPeriods();
+    sides = periodSides(p.before, p.after, c.periodPick);
+  }
+  if (!sides || !sides.every((s) => s.photo)) return null;
+  const [a, b] = sides;
+  const slug = ({ from, to }) => (from === to ? from : `${from}_${to}`);
+  return {
+    sides,
+    footer: [`${a.title} → ${b.title}`, a.avg && b.avg && `${fmtDelta(round1(b.avg.avg - a.avg.avg))} avg`, pose],
+    name: `progress-${slug(a.period)}-vs-${slug(b.period)}`,
+  };
 }
 
 async function exportComparison() {
-  const { before, after } = resolveCompare();
-  if (!before || !after) return;
-  const [imgB, imgA] = await Promise.all([loadImage(urlFor(before)), loadImage(urlFor(after))]);
+  const spec = exportSpec();
+  if (!spec) return;
+  const imgs = await Promise.all(spec.sides.map((s) => loadImage(urlFor(s.photo))));
 
   const pw = 900, ph = 1200, gap = 12, footer = 150;
   const canvas = document.createElement('canvas');
@@ -315,37 +535,36 @@ async function exportComparison() {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#0e1013';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const font = (weight, size) => `${weight} ${size}px system-ui, -apple-system, sans-serif`;
 
-  [[imgB, before, 'BEFORE', 0], [imgA, after, 'AFTER', pw + gap]].forEach(([img, p, label, x]) => {
-    drawCover(ctx, img, x, 0, pw, ph);
-    const grad = ctx.createLinearGradient(0, ph - 220, 0, ph);
+  spec.sides.forEach((s, i) => {
+    const x = i ? pw + gap : 0;
+    drawCover(ctx, imgs[i], x, 0, pw, ph);
+    const grad = ctx.createLinearGradient(0, ph - 300, 0, ph);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.75)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.8)');
     ctx.fillStyle = grad;
-    ctx.fillRect(x, ph - 220, pw, 220);
-    ctx.fillStyle = label === 'AFTER' ? '#c8ff3d' : '#ffffff';
-    ctx.font = '800 44px system-ui, -apple-system, sans-serif';
-    ctx.fillText(label, x + 36, ph - 92);
+    ctx.fillRect(x, ph - 300, pw, 300);
+    ctx.fillStyle = i ? '#c8ff3d' : '#ffffff';
+    ctx.font = font(800, 32);
+    ctx.fillText(i ? 'AFTER' : 'BEFORE', x + 36, ph - 142);
     ctx.fillStyle = '#ffffff';
-    ctx.font = '500 34px system-ui, -apple-system, sans-serif';
-    ctx.fillText([fmtDate(p.takenAt), fmtWeight(p)].filter(Boolean).join('  ·  '), x + 36, ph - 40);
+    ctx.font = font(800, 52);
+    ctx.fillText(s.title, x + 36, ph - 84, pw - 72);
+    if (s.sub) {
+      ctx.font = font(500, 32);
+      ctx.fillStyle = '#d4d8de';
+      ctx.fillText(s.sub, x + 36, ph - 36, pw - 72);
+    }
   });
 
-  const days = Math.round((after.takenAt - before.takenAt) / 86400000);
-  const wb = weightIn(before), wa = weightIn(after);
-  const parts = [`${Math.abs(days)} days`];
-  if (wb != null && wa != null) {
-    const d = Math.round((wa - wb) * 10) / 10;
-    parts.push(`${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d)} ${state.unit}`);
-  }
-  parts.push(poseLabel(before.pose));
   ctx.fillStyle = '#ffffff';
-  ctx.font = '700 48px system-ui, -apple-system, sans-serif';
+  ctx.font = font(700, 46);
   ctx.textAlign = 'center';
-  ctx.fillText(parts.join('   ·   '), canvas.width / 2, ph + footer / 2 + 16);
+  ctx.fillText(spec.footer.filter(Boolean).join('   ·   '), canvas.width / 2, ph + footer / 2 + 16, canvas.width - 80);
 
   const blob = await canvasToBlob(canvas, 0.92);
-  const file = new File([blob], `progress-${toDateInput(before.takenAt)}-to-${toDateInput(after.takenAt)}.jpg`, { type: 'image/jpeg' });
+  const file = new File([blob], `${spec.name}.jpg`, { type: 'image/jpeg' });
   if (navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: 'My progress' }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
@@ -909,6 +1128,8 @@ document.addEventListener('click', async (e) => {
       ctl.disabled = !ghost;
       ctl.closest('label').classList.toggle('disabled', !ghost);
     } else {
+      state.compare.timeline = null;
+      state.compare.periodPick = {};
       render();
     }
     return;
@@ -916,9 +1137,37 @@ document.addEventListener('click', async (e) => {
   if (d.gpose) { state.galleryPose = d.gpose; return render(); }
   if (d.open) return openDetail(Number(d.open));
   if (d.mode) { state.compare.mode = d.mode; return render(); }
+  if (d.kind) {
+    state.compare.kind = d.kind;
+    writePref('compareKind', d.kind);
+    return render();
+  }
+  if (d.periodKind) {
+    const c = state.compare;
+    c.periodKind = d.periodKind;
+    if (d.periodKind === 'month') {
+      const p = currentPeriods();
+      c.periods = { before: { from: p.before.from, to: p.before.from }, after: { from: p.after.to, to: p.after.to } };
+    }
+    return render();
+  }
+  if (d.tl) {
+    const sel = timelineSelection(timelineMonths());
+    const i = sel.indexOf(d.tl);
+    if (i >= 0) sel.splice(i, 1);
+    else if (sel.push(d.tl) > 2) sel.shift();
+    state.compare.timeline = sel;
+    return render();
+  }
   if ('swap' in d) {
     const c = state.compare;
-    [c.beforeId, c.afterId] = [c.afterId, c.beforeId];
+    if (c.kind === 'periods') {
+      const p = currentPeriods();
+      c.periods = { before: p.after, after: p.before };
+      c.periodPick = { before: c.periodPick.after, after: c.periodPick.before };
+    } else {
+      [c.beforeId, c.afterId] = [c.afterId, c.beforeId];
+    }
     return render();
   }
   if ('export' in d) {
@@ -945,6 +1194,7 @@ document.addEventListener('click', async (e) => {
     state.pose = p.pose;
     resolveCompare();
     state.compare[d.set] = p.id;
+    state.compare.kind = 'dates';
     closeSheet();
     return go('compare');
   }
@@ -961,6 +1211,18 @@ document.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.pick) {
     state.compare[t.dataset.pick] = Number(t.value);
+    render();
+  } else if (t.dataset.period) {
+    const c = state.compare;
+    const p = currentPeriods();
+    const side = t.dataset.period;
+    const next = { ...p[side], [t.dataset.end]: t.value };
+    if (c.periodKind === 'month') next.to = next.from;
+    c.periods = { ...p, [side]: normalize(next) };
+    c.periodPick = { ...c.periodPick, [side]: null };
+    render();
+  } else if (t.dataset.periodPick) {
+    state.compare.periodPick = { ...state.compare.periodPick, [t.dataset.periodPick]: Number(t.value) };
     render();
   } else if ('upload' in t.dataset) {
     handleUpload(t.files[0]).catch(() => toast('Couldn’t read that image'));

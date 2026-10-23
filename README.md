@@ -9,11 +9,12 @@ A small installable web app for taking before/after gym photos and comparing the
   - Rule-of-thirds grid, 3s/10s self-timer, front/back camera flip
   - Upload from your photo library instead (the original date is kept)
 - **Poses**: Front, Side, Back, Flex, each tracked separately
-- **Compare**
-  - **Side by side** with Before/After labels, dates, and weights
-  - **Slider** mode: drag to reveal before vs. after
-  - Shows days between photos and weight change
-  - **Save comparison image**: exports one labelled side-by-side JPG (uses the share sheet on phones)
+- **Compare**, in three modes:
+  - **Dates**: any two photos, with days between them and the weight change
+  - **Periods**: compare one month against another (e.g. Sep vs Oct), or a custom range of months on each side. Each side uses the photo closest to the start of its period, and you can pick a different photo from inside it. Shows the average bodyweight for each period (each day averaged first, across all poses) and the change between them.
+  - **Timeline**: one photo per month for a pose in a horizontal strip you can scroll. Tap any two months to compare them side by side.
+  - Every mode supports **Side by side** and a **Slider** you drag to reveal before vs. after
+  - **Save comparison image** exports one labelled side-by-side JPG, with each side labelled by its date or period (uses the share sheet on phones)
 - **Gallery** of every photo, with set-as-before/after and delete
 - **Backup & restore**: one `.zip` with every photo plus dates, weights and notes. You can save it to Files, iCloud Drive or Google Drive and restore it on any phone. A dot on **Backup** reminds you when you have new photos that aren't backed up.
 - **Daily reminder**: pick a time in Settings and add a repeating daily calendar event with an alert, linking back to the app (see below)
@@ -76,10 +77,11 @@ The backup is a normal zip: a `photos/` folder of JPGs and a `backup.json` holdi
 | --- | --- |
 | `index.html` | App shell and tab bar |
 | `styles.css` | All styling |
-| `js/app.js` | Views (compare, capture, gallery, settings, tips), camera, and export |
+| `js/app.js` | Views (compare modes, capture, gallery, settings, tips), camera, and export |
 | `js/db.js` | IndexedDB wrapper |
 | `js/zip.js` | Zip writer and reader for backups |
 | `js/reminders.js` | Streak calculation and the daily reminder `.ics` |
 | `js/guide.js` | Photo tips used by the checklist and tips page |
+| `js/periods.js` | Month periods, photo selection and average weight for Periods and Timeline |
 | `sw.js` | Offline cache for the app shell |
 | `manifest.webmanifest`, `icons/` | Home-screen install metadata |
