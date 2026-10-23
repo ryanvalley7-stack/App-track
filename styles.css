@@ -454,3 +454,9 @@ main {
 }
 .tl-card.empty .tl-meta { background: none; }
 .tl-meta span { color: #d4d8de; font-size: 11px; }
+
+/* ---------- push reminders ---------- */
+
+.push-controls { margin-top: 12px; }
+.push-status { margin: 0; font-weight: 700; color: var(--accent); }
+.push-note { margin: 0; font-size: 14px; color: var(--muted); padding: 10px 12px; border-radius: 12px; background: var(--bg); }

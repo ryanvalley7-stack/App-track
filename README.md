@@ -17,20 +17,18 @@ A small installable web app for taking before/after gym photos and comparing the
   - **Save comparison image** exports one labelled side-by-side JPG, with each side labelled by its date or period (uses the share sheet on phones)
 - **Gallery** of every photo, with set-as-before/after and delete
 - **Backup & restore**: one `.zip` with every photo plus dates, weights and notes. You can save it to Files, iCloud Drive or Google Drive and restore it on any phone. A dot on **Backup** reminds you when you have new photos that aren't backed up.
-- **Daily reminder**: pick a time in Settings and add a repeating daily calendar event with an alert, linking back to the app (see below)
+- **Daily reminder**: a push notification at the time you pick, like "Progress pic time. Day 12 streak." It's skipped on days you've already taken a photo, and tapping it opens the camera (see below)
 - **Streak**: the home screen shows how many days in a row you've logged a photo, and a banner appears if today's photo isn't taken yet
 - **Photo guidance**: a quick tap-through checklist before the camera opens (with "Don't show again today"), plus a "How to take good progress photos" page in Settings explaining why each tip matters
 - lb/kg setting, works offline once loaded
 
 ## Daily reminders
 
-A web app with no server can't send push notifications, so the reminder lives in your phone's calendar instead:
+Reminders are real push notifications, sent by a small free Cloudflare Worker in [`worker/`](worker/). The app itself has no server, so the Worker remembers your reminder time and sends the notification. Only your push subscription, reminder time, time zone, latest photo date and streak count are sent to it, never photos.
 
-1. Open **Settings** (the sliders icon at the top right) and set **Remind me at**.
-2. Tap **Add to Calendar**. On iPhone, tap **Allow**, then **Add All**. If nothing opens, tap **Share…** and send the file to yourself in Mail or Messages, then tap the attachment.
-3. You get a daily alert at that time. The event's link opens the app straight to the camera.
-
-To change the time, add it again and delete the old event in Calendar. On iPhone, calendar links open in Safari, which keeps separate storage from the home-screen app, so open the app from its icon to take the photo.
+1. Set up the Worker once by following [`worker/README.md`](worker/README.md). It takes about 10 minutes on Cloudflare's free plan and ends with putting the Worker URL in `js/config.js`.
+2. On iPhone (iOS 16.4 or later), open the app **from its Home Screen icon**, go to **Settings**, set **Remind me at**, and tap **Enable reminders**.
+3. Tap **Send test notification** to check it works. **Turn off** stops reminders.
 
 ## Install it on your phone
 
@@ -80,8 +78,11 @@ The backup is a normal zip: a `photos/` folder of JPGs and a `backup.json` holdi
 | `js/app.js` | Views (compare modes, capture, gallery, settings, tips), camera, and export |
 | `js/db.js` | IndexedDB wrapper |
 | `js/zip.js` | Zip writer and reader for backups |
-| `js/reminders.js` | Streak calculation and the daily reminder `.ics` |
+| `js/streak.js` | Streak calculation |
+| `js/push.js` | Push subscription and talking to the reminder Worker |
+| `js/config.js` | URL of your reminder Worker |
 | `js/guide.js` | Photo tips used by the checklist and tips page |
 | `js/periods.js` | Month periods, photo selection and average weight for Periods and Timeline |
-| `sw.js` | Offline cache for the app shell |
+| `sw.js` | Offline cache for the app shell; shows reminder notifications and opens the camera when tapped |
+| `worker/` | Cloudflare Worker that sends the daily reminders ([setup](worker/README.md)) |
 | `manifest.webmanifest`, `icons/` | Home-screen install metadata |

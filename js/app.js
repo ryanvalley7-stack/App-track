@@ -1,6 +1,7 @@
 import * as db from './db.js';
 import { createZip, readZip } from './zip.js';
-import { dayKey, streaks, buildIcs } from './reminders.js';
+import { dayKey, streaks } from './streak.js';
+import * as push from './push.js';
 import { TIPS } from './guide.js';
 import { monthKey, monthsBetween, photosInPeriod, avgWeight, monthLabel, periodLabel, normalize } from './periods.js';
 
@@ -175,6 +176,7 @@ async function savePhoto({ blob, pose, takenAt, weight, note }) {
   const record = { pose, takenAt, weight, unit: state.unit, note, blob, thumb, createdAt: Date.now() };
   const id = await db.add(record);
   await reload();
+  syncPush();
   return id;
 }
 
@@ -184,6 +186,7 @@ async function deletePhoto(id) {
   if (state.compare.beforeId === id) state.compare.beforeId = null;
   if (state.compare.afterId === id) state.compare.afterId = null;
   await reload();
+  syncPush();
 }
 
 // ---------- navigation ----------
@@ -873,6 +876,7 @@ async function restoreBackup(file, onProgress) {
     have.add(key);
     added++;
   }
+  if (added) syncPush();
   // Restored photos are already in a backup, so they shouldn't trigger the reminder.
   if (wasBackedUp && Number.isFinite(manifest.exportedAt) && manifest.exportedAt > state.lastBackup) {
     state.lastBackup = manifest.exportedAt;
@@ -981,21 +985,93 @@ async function handleRestore(file) {
 
 // ---------- settings ----------
 
-function icsFile() {
-  const url = new URL('./?capture=1', location.href).href;
-  return new File([buildIcs({ time: state.reminderTime, url })], 'progress-photo-reminder.ics', { type: 'text/calendar' });
-}
-
 function fmtTime(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
   return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-function reminderStatus() {
-  const saved = readPref('reminderSaved', '');
-  if (!saved) return 'Not added to your calendar yet.';
-  if (saved !== state.reminderTime) return `Your calendar has the ${fmtTime(saved)} reminder. Add it again to switch to ${fmtTime(state.reminderTime)}, then delete the old event.`;
-  return `Added for ${fmtTime(saved)} every day.`;
+// ---------- push reminders ----------
+
+const PUSH_NOTES = {
+  unconfigured: 'Reminders need the free reminder server set up first: follow worker/README.md, then put its URL in js/config.js.',
+  'needs-install': 'On iPhone, notifications only work in the installed app. In Safari tap Share → Add to Home Screen, then open Gym Progress from that icon and come back here. Needs iOS 16.4 or later.',
+  unsupported: 'This browser doesn’t support push notifications.',
+  denied: 'Notifications are blocked for Gym Progress. Allow them in your phone’s Settings → Notifications → Gym Progress, then come back here.',
+};
+
+// What the server needs to word the reminder and skip days you've already logged.
+function pushInfo() {
+  const latest = state.photos[state.photos.length - 1];
+  return {
+    time: state.reminderTime,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    lastPhotoDay: latest ? dayKey(latest.takenAt) : null,
+    streak: streaks(state.photos).current,
+  };
+}
+
+function syncPush() {
+  push.syncPhotos(pushInfo()).catch((err) => console.warn('Reminder sync failed:', err.message));
+}
+
+async function renderPushControls(note = '') {
+  const el = $('[data-push]');
+  if (!el) return;
+  const support = push.pushSupport();
+  let sub = null;
+  if (support === 'ready') {
+    push.prefetchPublicKey().catch(() => {});
+    sub = await push.getSubscription().catch(() => null);
+  }
+  if (!$('[data-push]')) return; // left Settings while waiting
+  el.innerHTML = `
+    ${support !== 'ready' ? `<p class="push-note">${PUSH_NOTES[support]}</p>` : sub ? `
+      <p class="push-status">✓ On · every day at ${fmtTime(state.reminderTime)}</p>
+      <div class="row-actions tight">
+        <button class="btn ghost-btn" data-push-test>Send test notification</button>
+        <button class="btn ghost-btn" data-push-off>Turn off</button>
+      </div>` : `
+      <button class="btn primary wide" data-push-on>Enable reminders</button>`}
+    ${note ? `<p class="muted small" data-push-note>${esc(note)}</p>` : ''}`;
+}
+
+async function handlePushOn(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Enabling…';
+  try {
+    // enableReminders asks for permission first, still inside this tap.
+    await push.enableReminders(pushInfo());
+    renderPushControls('Reminders are on. Tap “Send test notification” to check.');
+  } catch (err) {
+    renderPushControls(err.code === 'denied' ? '' : `Couldn’t turn on reminders: ${err.message}`);
+  }
+}
+
+async function handlePushTest(btn) {
+  btn.disabled = true;
+  try {
+    await push.sendTest();
+    renderPushControls('Sent. It should arrive in a few seconds.');
+  } catch (err) {
+    if (err.status === 410) {
+      await push.disableReminders().catch(() => {});
+      renderPushControls('That subscription expired. Tap “Enable reminders” to turn reminders back on.');
+    } else {
+      renderPushControls(`Couldn’t send a test: ${err.message}`);
+    }
+  }
+}
+
+async function handlePushOff(btn) {
+  btn.disabled = true;
+  await push.disableReminders().catch(() => {});
+  renderPushControls('Reminders are off.');
+}
+
+function handleReminderTime() {
+  push.updateReminders(pushInfo())
+    .then((on) => on && renderPushControls(`Reminder time changed to ${fmtTime(state.reminderTime)}.`))
+    .catch((err) => renderPushControls(`Couldn’t update the reminder time: ${err.message}`));
 }
 
 function pageHead(title) {
@@ -1003,21 +1079,12 @@ function pageHead(title) {
 }
 
 function renderSettings() {
-  const canShare = navigator.canShare?.({ files: [icsFile()] });
   view.innerHTML = `${pageHead('Settings')}
     <section class="card">
       <h3>Daily photo reminder</h3>
-      <p class="muted">The app can’t send notifications on its own, so the reminder goes in your phone’s calendar as a daily event with an alert. Tapping it links back here.</p>
+      <p class="muted">Get a notification at this time every day. It’s skipped on days you’ve already taken a photo.</p>
       <label class="field-inline">Remind me at <input type="time" value="${state.reminderTime}" data-reminder-time></label>
-      <div class="row-actions tight">
-        <button class="btn primary" data-ics-add>Add to Calendar</button>
-        ${canShare ? '<button class="btn ghost-btn" data-ics-share>Share…</button>' : ''}
-      </div>
-      <p class="muted small" data-reminder-status>${reminderStatus()}</p>
-      <details class="help">
-        <summary>Using an iPhone?</summary>
-        <p>Tap <strong>Add to Calendar</strong>, then <strong>Allow</strong> if asked, then <strong>Add All</strong>. If nothing opens, tap <strong>Share…</strong> and send the file to yourself in Mail or Messages, then tap the attachment. Links in calendar events open in Safari, so when the alert goes off, open Gym Progress from your home screen icon, where your photos are stored.</p>
-      </details>
+      <div class="push-controls" data-push><p class="muted small">Checking…</p></div>
     </section>
 
     <section class="card">
@@ -1039,6 +1106,7 @@ function renderSettings() {
       <h3>Your data</h3>
       <button class="row-link" data-backup-open><span>Backup &amp; restore</span><span class="muted small">Last backup: ${fmtAgo(state.lastBackup)} ›</span></button>
     </section>`;
+  renderPushControls();
 }
 
 function renderTips() {
@@ -1047,24 +1115,6 @@ function renderTips() {
     <ol class="tips">${TIPS.map((t) => `
       <li class="card"><h3>${t.title}</h3><p class="tip-do">${t.check}</p><p>${t.why}</p></li>`).join('')}
     </ol>`;
-}
-
-function saveIcs(share) {
-  const file = icsFile();
-  const done = () => {
-    writePref('reminderSaved', state.reminderTime);
-    $('[data-reminder-status]').textContent = reminderStatus();
-  };
-  if (share) {
-    navigator.share({ files: [file], title: 'Progress photo reminder' }).then(done, () => {});
-    return;
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(file);
-  a.download = file.name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  done();
 }
 
 // ---------- gallery ----------
@@ -1102,8 +1152,9 @@ document.addEventListener('click', async (e) => {
     guide.seen = true;
     return renderCapture();
   }
-  if ('icsAdd' in d) return saveIcs(false);
-  if ('icsShare' in d) return saveIcs(true);
+  if ('pushOn' in d) return handlePushOn(t);
+  if ('pushTest' in d) return handlePushTest(t);
+  if ('pushOff' in d) return handlePushOff(t);
   if (d.unit) {
     state.unit = d.unit;
     writePref('unit', state.unit);
@@ -1228,9 +1279,10 @@ document.addEventListener('change', (e) => {
     handleUpload(t.files[0]).catch(() => toast('Couldn’t read that image'));
     t.value = '';
   } else if ('reminderTime' in t.dataset) {
-    if (t.value) state.reminderTime = t.value;
+    if (!t.value) return;
+    state.reminderTime = t.value;
     writePref('reminderTime', state.reminderTime);
-    $('[data-reminder-status]').textContent = reminderStatus();
+    handleReminderTime();
   } else if ('guideEnabled' in t.dataset) {
     writePref('guideEnabled', t.checked ? '1' : '0');
   } else if ('restore' in t.dataset) {
@@ -1272,12 +1324,18 @@ document.addEventListener('visibilitychange', () => {
   }
   const latest = state.photos[state.photos.length - 1];
   if (latest) state.pose = latest.pose;
-  // ?capture=1 comes from the calendar reminder and the home-screen shortcut.
+  // ?capture=1 comes from a reminder notification and the home-screen shortcut.
   const params = new URLSearchParams(location.search);
   if (params.has('capture')) history.replaceState(null, '', location.pathname);
   go(params.has('capture') || !state.photos.length ? 'capture' : 'compare');
+  try { localStorage.removeItem('gp:reminderSaved'); } catch { /* left over from calendar reminders */ }
+  syncPush();
 })();
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
+  // Tapping a reminder notification while the app is open.
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.type === 'open-capture') go('capture');
+  });
 }

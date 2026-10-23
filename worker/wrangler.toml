@@ -1,0 +1,20 @@
+name = "gym-progress-push"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Runs every 15 minutes and sends reminders that are due in that window.
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Subscriptions. Replace the id with the one printed by
+# `npx wrangler kv namespace create SUBS` (see README.md).
+[[kv_namespaces]]
+binding = "SUBS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[vars]
+# Where the app is hosted (no trailing slash). Requests from other sites are refused.
+APP_ORIGIN = "https://ryanvalley7-stack.github.io"
+
+# Secrets (set with `npx wrangler secret put NAME`, never written here):
+#   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT

@@ -1,6 +1,6 @@
 // Month-based periods for comparing ranges of photos. A period is an inclusive
 // range of months: { from: 'YYYY-MM', to: 'YYYY-MM' }.
-import { dayKey } from './reminders.js';
+import { dayKey } from './streak.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 
