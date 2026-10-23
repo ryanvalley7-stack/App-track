@@ -302,3 +302,24 @@ main {
   .side-by-side { gap: 10px; }
   .cam-frame, .slider-stage { max-width: 460px; }
 }
+
+/* ---------- backup ---------- */
+
+.topbar-actions { display: flex; gap: 8px; }
+#backupBtn { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+#backupBtn svg { width: 16px; height: 16px; }
+#backupBtn .dot {
+  position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--bg);
+}
+#backupBtn .dot[hidden] { display: none; }
+
+.backup h2 { margin: 0 0 8px; font-size: 18px; }
+.backup h3 { margin: 24px 0 4px; font-size: 16px; }
+.backup .muted { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+.backup .small { font-size: 13px; margin: 8px 0 0; }
+.backup-status { font-size: 14px; font-weight: 600; padding: 10px 12px; border-radius: 12px; background: var(--bg); margin: 0 0 12px; }
+.backup-status.warn { color: var(--accent); }
+.backup-ready { margin: 0; font-weight: 700; color: var(--accent); }
+.btn.wide { width: 100%; }
+.row-actions.tight { margin-top: 10px; }

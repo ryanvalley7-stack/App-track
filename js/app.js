@@ -1,4 +1,5 @@
 import * as db from './db.js';
+import { createZip, readZip } from './zip.js';
 
 const POSES = [
   { id: 'front', label: 'Front' },
@@ -17,6 +18,7 @@ const state = {
   galleryPose: 'all',
   compare: { beforeId: null, afterId: null, mode: 'side', split: 50 },
   unit: readPref('unit', 'lb'),
+  lastBackup: Number(readPref('lastBackup', 0)),
 };
 
 const camera = { stream: null, facing: 'user', timer: 0, grid: true, ghost: 0.35, busy: false };
@@ -89,6 +91,7 @@ function photosFor(pose) {
 }
 
 function toast(msg) {
+  document.querySelectorAll('.toast').forEach((t) => t.remove());
   const el = document.createElement('div');
   el.className = 'toast';
   el.textContent = msg;
@@ -176,6 +179,7 @@ function go(name) {
 
 function render() {
   view.dataset.view = state.view;
+  $('#backupBtn .dot').hidden = !needsBackup();
   if (state.view === 'compare') renderCompare();
   else if (state.view === 'capture') renderCapture();
   else renderGallery();
@@ -527,6 +531,179 @@ function openDetail(id) {
     </div>`);
 }
 
+// ---------- backup ----------
+
+let pendingBackup = null; // File built by createBackup, waiting to be shared/downloaded
+
+function needsBackup() {
+  return state.photos.some((p) => (p.createdAt ?? 0) > state.lastBackup);
+}
+
+function fmtSize(bytes) {
+  return bytes < 1e6 ? `${Math.max(1, Math.round(bytes / 1e3))} KB` : `${(bytes / 1e6).toFixed(1)} MB`;
+}
+
+function fmtAgo(ms) {
+  if (!ms) return 'never';
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  return days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
+function dupKey(p) {
+  return `${p.pose}|${p.takenAt}|${p.blob.size}`;
+}
+
+async function createBackup() {
+  const manifest = { app: 'gym-progress', version: 1, exportedAt: Date.now(), photos: [] };
+  const files = [];
+  for (const p of state.photos) {
+    const file = `photos/${toDateInput(p.takenAt)}_${p.pose}_${p.id}.jpg`;
+    files.push({ name: file, data: new Uint8Array(await p.blob.arrayBuffer()), date: new Date(p.takenAt) });
+    manifest.photos.push({
+      file, pose: p.pose, takenAt: p.takenAt, weight: p.weight, unit: p.unit, note: p.note, createdAt: p.createdAt,
+    });
+  }
+  files.unshift({ name: 'backup.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
+  const zip = createZip(files);
+  return new File([zip], `gym-progress-backup-${toDateInput(Date.now())}.zip`, { type: 'application/zip' });
+}
+
+async function restoreBackup(file, onProgress) {
+  const entries = await readZip(file);
+  const manifestBytes = entries.get('backup.json');
+  if (!manifestBytes) throw new Error('That zip isn’t a Gym Progress backup.');
+  const manifest = JSON.parse(new TextDecoder().decode(manifestBytes));
+  const items = Array.isArray(manifest.photos) ? manifest.photos : [];
+  const have = new Set(state.photos.map(dupKey));
+  const wasBackedUp = !needsBackup();
+  let added = 0, skipped = 0;
+
+  for (const [i, m] of items.entries()) {
+    onProgress?.(i + 1, items.length);
+    const bytes = entries.get(m.file);
+    if (!bytes || !POSES.some((p) => p.id === m.pose) || !Number.isFinite(m.takenAt)) { skipped++; continue; }
+    const blob = new Blob([bytes], { type: 'image/jpeg' });
+    const key = dupKey({ pose: m.pose, takenAt: m.takenAt, blob });
+    if (have.has(key)) { skipped++; continue; }
+    await db.add({
+      pose: m.pose,
+      takenAt: m.takenAt,
+      weight: Number.isFinite(m.weight) ? m.weight : null,
+      unit: m.unit === 'kg' ? 'kg' : 'lb',
+      note: String(m.note ?? '').slice(0, 140),
+      blob,
+      thumb: await resizeBlob(blob, THUMB_DIM, 0.8),
+      createdAt: Number.isFinite(m.createdAt) ? m.createdAt : Date.now(),
+    });
+    have.add(key);
+    added++;
+  }
+  // Restored photos are already in a backup, so they shouldn't trigger the reminder.
+  if (wasBackedUp && Number.isFinite(manifest.exportedAt) && manifest.exportedAt > state.lastBackup) {
+    state.lastBackup = manifest.exportedAt;
+    writePref('lastBackup', state.lastBackup);
+  }
+  await reload();
+  return { added, skipped };
+}
+
+function markBackedUp() {
+  state.lastBackup = Date.now();
+  writePref('lastBackup', state.lastBackup);
+  $('#backupBtn .dot').hidden = true;
+  const status = $('[data-backup-status]');
+  if (status) status.textContent = backupStatus();
+}
+
+function backupStatus() {
+  const n = state.photos.length;
+  return `${n} photo${n === 1 ? '' : 's'} on this device · Last backup: ${fmtAgo(state.lastBackup)}`;
+}
+
+function openBackup() {
+  const n = state.photos.length;
+  openSheet(`
+    <div class="backup">
+      <h2>Backup &amp; restore</h2>
+      <p class="muted">Your photos are only stored on this device. Save a backup to Files, iCloud Drive or Google Drive so you don’t lose them if you switch phones or clear your browser.</p>
+      <p class="backup-status ${needsBackup() ? 'warn' : ''}" data-backup-status>${backupStatus()}</p>
+      <div data-backup-slot>
+        <button class="btn primary wide" data-backup-create ${n ? '' : 'disabled'}>Create backup</button>
+      </div>
+
+      <h3>Restore</h3>
+      <p class="muted">Pick a backup .zip. Photos already on this device are skipped, so restoring twice is safe.</p>
+      <label class="btn ghost-btn wide">Restore from backup
+        <input type="file" accept=".zip,application/zip" data-restore hidden>
+      </label>
+      <p class="muted small" data-restore-status></p>
+
+      <div class="row-actions"><button class="btn ghost-btn" data-close>Close</button></div>
+    </div>`, () => { pendingBackup = null; });
+}
+
+async function handleBackupCreate(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Preparing…';
+  try {
+    pendingBackup = await createBackup();
+  } catch (err) {
+    console.error(err);
+    toast('Couldn’t create backup');
+    btn.disabled = false;
+    btn.textContent = 'Create backup';
+    return;
+  }
+  const canShare = navigator.canShare?.({ files: [pendingBackup] });
+  // Share needs a fresh tap (iOS), so the file is built first and saved from a second button.
+  $('[data-backup-slot]').innerHTML = `
+    <p class="backup-ready">✓ Backup ready — ${state.photos.length} photos, ${fmtSize(pendingBackup.size)}</p>
+    <div class="row-actions tight">
+      ${canShare ? '<button class="btn primary" data-backup-share>Save / Share…</button>' : ''}
+      <button class="btn ${canShare ? 'ghost-btn' : 'primary'}" data-backup-download>Download</button>
+    </div>`;
+}
+
+async function handleBackupShare() {
+  if (!pendingBackup) return;
+  try {
+    await navigator.share({ files: [pendingBackup], title: 'Gym Progress backup' });
+    markBackedUp();
+    toast('Backup saved');
+  } catch (err) {
+    if (err.name !== 'AbortError') handleBackupDownload();
+  }
+}
+
+function handleBackupDownload() {
+  if (!pendingBackup) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(pendingBackup);
+  a.download = pendingBackup.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  markBackedUp();
+}
+
+async function handleRestore(file) {
+  if (!file) return;
+  const status = $('[data-restore-status]');
+  try {
+    const { added, skipped } = await restoreBackup(file, (i, n) => { status.textContent = `Restoring ${i} of ${n}…`; });
+    status.textContent = `Restored ${added} photo${added === 1 ? '' : 's'}${skipped ? ` (${skipped} already here, skipped)` : ''}.`;
+    $('[data-backup-status]').textContent = backupStatus();
+    const createBtn = $('[data-backup-create]');
+    if (createBtn) createBtn.disabled = !state.photos.length;
+    const latest = state.photos[state.photos.length - 1];
+    if (added && latest) state.pose = latest.pose;
+    toast(added ? `Restored ${added} photo${added === 1 ? '' : 's'}` : 'Nothing new to restore');
+    if (state.view !== 'capture') render();
+  } catch (err) {
+    console.error(err);
+    status.textContent = err.message || 'Couldn’t read that backup.';
+  }
+}
+
 // ---------- gallery ----------
 
 function renderGallery() {
@@ -550,6 +727,10 @@ document.addEventListener('click', async (e) => {
   const d = t.dataset;
 
   if ('close' in d) return closeSheet();
+  if ('backupOpen' in d) return openBackup();
+  if ('backupCreate' in d) return handleBackupCreate(t);
+  if ('backupShare' in d) return handleBackupShare();
+  if ('backupDownload' in d) return handleBackupDownload();
   if (d.view) return go(d.view);
   if (d.go) return go(d.go);
 
@@ -621,6 +802,9 @@ document.addEventListener('change', (e) => {
     render();
   } else if ('upload' in t.dataset) {
     handleUpload(t.files[0]).catch(() => toast('Couldn’t read that image'));
+    t.value = '';
+  } else if ('restore' in t.dataset) {
+    handleRestore(t.files[0]);
     t.value = '';
   }
 });

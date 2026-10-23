@@ -17,7 +17,13 @@
 <body>
   <header class="topbar">
     <h1>Gym Progress</h1>
-    <button id="unitToggle" class="pill" aria-label="Toggle weight unit">lb</button>
+    <div class="topbar-actions">
+      <button id="backupBtn" class="pill" data-backup-open aria-label="Backup and restore">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 15v4h14v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Backup<span class="dot" hidden></span>
+      </button>
+      <button id="unitToggle" class="pill" aria-label="Toggle weight unit">lb</button>
+    </div>
   </header>
 
   <main id="view" aria-live="polite"></main>

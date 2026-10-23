@@ -15,22 +15,47 @@ A small installable web app for taking before/after gym photos and comparing the
   - Shows days between photos and weight change
   - **Save comparison image**: exports one labelled side-by-side JPG (uses the share sheet on phones)
 - **Gallery** of every photo, with set-as-before/after and delete
+- **Backup & restore**: one `.zip` with every photo plus dates, weights and notes. You can save it to Files, iCloud Drive or Google Drive and restore it on any phone. A dot on **Backup** reminds you when you have new photos that aren't backed up.
 - lb/kg toggle, works offline once loaded
 
-## Run it
+## Install it on your phone
 
-It's a static site with no build step and no dependencies.
+It's a web app, so there's no app store. You put it on a website once, then add it to your home screen, where it opens full-screen and works offline like a normal app.
+
+### 1. Put it online (one time)
+
+The camera needs an `https://` address. Pick one option:
+
+**Option A: GitHub Pages (free).** GitHub Pages on a private repo needs a paid GitHub plan, so on a free account you first make the repo public. Only the app's code is in the repo; your photos never leave your phone.
+1. Go to the repo's **Settings → General**, then under **Danger Zone** choose **Change visibility → Public**.
+2. Go to **Settings → Pages**. Under **Build and deployment**, set **Source** to *Deploy from a branch*, pick the branch, keep the folder at `/ (root)`, and **Save**.
+3. After about a minute the page shows your link, for example `https://ryanvalley7-stack.github.io/App-track/`.
+
+**Option B: Netlify (free, repo stays private).** Sign in at netlify.com with GitHub, choose **Add new site → Import an existing project**, and pick this repo. Leave the build command empty and set the publish directory to `/`. Netlify gives you an `https://….netlify.app` link and redeploys whenever the repo changes.
+
+### 2. Add it to your home screen
+
+- **iPhone:** open the link in **Safari**, tap the **Share** button, then **Add to Home Screen**.
+- **Android:** open the link in **Chrome**, tap **⋮**, then **Install app** (or **Add to Home screen**).
+
+Open it from the new icon and allow camera access when it asks.
+
+### Run it locally
 
 ```sh
 python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-The camera needs HTTPS (or `localhost`). To use it on your phone, host the folder on any static HTTPS host, such as GitHub Pages (Settings → Pages → deploy from branch). Then open it in Safari or Chrome and choose **Add to Home Screen** so it opens like a normal app.
+## Storage and backups
 
-## Storage
+Photos are stored in the browser's IndexedDB on that device, resized to at most 1600px. The app asks the browser to keep this storage persistent. Clearing site data for the app, or deleting it from your home screen, deletes your photos, so back up regularly:
 
-Photos are stored in the browser's IndexedDB on that device, resized to at most 1600px. The app asks the browser to keep this storage persistent. Clearing site data for the app, or uninstalling it, deletes your photos. Use **Save comparison image** to keep copies of the comparisons you care about.
+1. Tap **Backup**, then **Create backup**.
+2. Tap **Save / Share…** and choose **Save to Files** (iPhone) or Drive, or tap **Download**.
+3. To restore, for example on a new phone, tap **Backup**, then **Restore from backup**, and pick the `.zip`. Photos already on the phone are skipped.
+
+The backup is a normal zip: a `photos/` folder of JPGs and a `backup.json` holding the pose, date, weight and note for each photo.
 
 ## Files
 
@@ -40,5 +65,6 @@ Photos are stored in the browser's IndexedDB on that device, resized to at most 
 | `styles.css` | All styling |
 | `js/app.js` | Views (compare, capture, gallery), camera, and export |
 | `js/db.js` | IndexedDB wrapper |
+| `js/zip.js` | Zip writer and reader for backups |
 | `sw.js` | Offline cache for the app shell |
 | `manifest.webmanifest`, `icons/` | Home-screen install metadata |
